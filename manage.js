@@ -9,7 +9,7 @@
  function company(){return S.state.companies.find(c=>c.id===P.companyId);}
  function mutate(edit,after){
   if(!P.flush()){status('현재 답변을 저장하지 못했습니다. 답변을 복사하고 저장 설정을 확인해 주세요.',true);return false;}
-  try{S.transaction(edit);P.refresh();updateChrome();status('기기에 저장했습니다.');if(after)after();return true;}catch(e){error(e);return false;}
+  try{const managerOpen=!$('manager').hidden;S.transaction(edit);P.refresh();if(managerOpen)P.openManagement();updateChrome();status('기기에 저장했습니다.');if(after)after();return true;}catch(e){error(e);return false;}
  }
  function field(form,label,id,type='text',value='',options=[]){
   const wrap=el('label',label,'form-field');wrap.htmlFor=id;let input;
@@ -19,8 +19,8 @@
   input.id=id;input.name=id;wrap.append(input);form.append(wrap);return input;
  }
  function formSubmit(form,text,fn){const b=el('button',text,'primary-button');b.type='submit';form.append(b);form.onsubmit=e=>{e.preventDefault();if(!form.reportValidity())return;try{fn();}catch(err){error(err);}};}
- function hideManager(){ $('manager').hidden=true; document.querySelector('.workspace').hidden=false; document.querySelector('.workspace-heading').hidden=false; }
- function open(which){if(!P.pause()){status('현재 답변을 저장하지 못했습니다. 답변을 먼저 복사해 주세요.',true);return;}document.querySelector('.workspace').hidden=true;document.querySelector('.workspace-heading').hidden=true;returnFocus=document.activeElement;panel=which;$('manager').hidden=false;$('manager-title').textContent={companies:'기업 관리',library:'질문 관리',debriefs:'면접 복기'}[which];renderPanel();$('manager').focus();$('manager').scrollIntoView({block:'start',behavior:'instant'});}
+ function hideManager(){P.showHome();}
+ function open(which){if(!P.pause()){status('현재 답변을 저장하지 못했습니다. 답변을 먼저 복사해 주세요.',true);return;}P.openManagement();returnFocus=document.activeElement;panel=which;$('manager').hidden=false;$('manager-title').textContent={companies:'기업 관리',library:'질문 관리',debriefs:'면접 복기'}[which];renderPanel();$('manager').focus();$('manager').scrollIntoView({block:'start',behavior:'instant'});}
  function renderPanel(){const root=$('manager-content');root.replaceChildren();if(panel==='companies')renderCompanies(root);else if(panel==='library')renderLibrary(root);else if(panel==='debriefs')renderDebriefs(root);}
  function updateChrome(){
   const select=$('company-select');select.replaceChildren();const all=el('option','전체 공통 질문 연습');all.value='';select.append(all);
@@ -28,7 +28,7 @@
   const c=company();$('company-title').textContent=c?c.name+' · '+c.role:'공통 질문 라이브러리';
   const questions=S.questions(P.companyId),records=S.records(P.companyId),done=questions.filter(q=>records[q.id]?.completed).length;
   const progress=questions.length?Math.round(done/questions.length*100):0;
-  $('company-summary').textContent=c?`${c.status} · 면접 ${c.schedule?c.schedule.replace('T',' '):'일정 미등록'} (입력한 현지 시각) · 예상 ${questions.length}문항 · 완료 ${done}문항 · 진도율 ${progress}%`:`전체 기업이 공유하는 ${questions.length}개 문항 · 완료 ${done}개 · 진도율 ${progress}%. 회사별 모범답변과 기록은 기업을 선택하면 볼 수 있습니다.`;
+  $('company-summary').textContent=c?`${c.status} · 면접 ${c.schedule?c.schedule.replace('T',' '):'일정 미등록'} (입력한 현지 시각) · 예상 ${questions.length}문항 · 완료 ${done}문항 · 진도율 ${progress}% · 답변 완료 ${Object.values(records).reduce((n,r)=>n+(r.history?.length||0),0)}회`:`전체 기업이 공유하는 ${questions.length}개 문항 · 완료 ${done}개 · 진도율 ${progress}%. 회사별 모범답변과 기록은 기업을 선택하면 볼 수 있습니다.`;
   $('edit-current-company').hidden=!c;$('practice-scope').disabled=!c;
   $('migration-panel').hidden=!S.pendingLegacy;
   for(const b of [$('migrate-records'),$('postpone-migration')])b.disabled=!!S.fatal;
@@ -103,13 +103,13 @@
   const retry=field(form,'다시 연습할 질문','edit-retry','checkbox',q?.retry);
   const notes=field(form,'준비 메모','edit-notes','textarea',q?.notes);
   const follows=el('div');form.append(follows);let rows=[];
-  function addFollow(f={question:'',answer:''}){const wrap=el('div',undefined,'followup-editor');const id=S.uid();const fq=field(wrap,'꼬리질문','follow-question-'+id,'textarea',f.question);const fa=field(wrap,'꼬리질문 참고 답변','follow-answer-'+id,'textarea',f.answer);const row={wrap,fq,fa};rows.push(row);wrap.append(button('이 꼬리질문 삭제',()=>{rows=rows.filter(x=>x!==row);wrap.remove();}));follows.append(wrap);}
+  function addFollow(f={question:'',answer:''}){const wrap=el('div',undefined,'followup-editor');const id=S.uid();const fq=field(wrap,'꼬리질문','follow-question-'+id,'textarea',f.question);const fa=field(wrap,'꼬리질문 참고 답변','follow-answer-'+id,'textarea',f.answer);const row={wrap,fq,fa,meta:{id:f.id||id,source:f.source||'manual'}};rows.push(row);wrap.append(button('이 꼬리질문 삭제',()=>{rows=rows.filter(x=>x!==row);wrap.remove();}));follows.append(wrap);}
   for(const f of q?.followUps||[])addFollow(f);
   form.append(button('꼬리질문 추가',()=>addFollow()));
   if(q)form.append(el('p','모범답변이나 꼬리질문을 수정하면 이 범위의 해당 질문 완료·자기 평가를 초기화합니다. 작성한 기본 답변은 보존하며, 순서가 바뀔 수 있는 꼬리질문 연습 기록은 초기화합니다.','help'));
   formSubmit(form,'질문 저장',()=>{
    if(!question.value.trim())throw Error('본 질문을 입력해 주세요.');
-   const followUps=rows.map(r=>({question:r.fq.value.trim(),answer:r.fa.value}));if(followUps.some(f=>!f.question))throw Error('꼬리질문을 입력하거나 비어 있는 항목을 삭제해 주세요. 참고 답변은 나중에 작성할 수 있습니다.');
+   const followUps=rows.map(r=>({...r.meta,question:r.fq.value.trim(),answer:r.fa.value}));if(followUps.some(f=>!f.question))throw Error('꼬리질문을 입력하거나 비어 있는 항목을 삭제해 주세요. 참고 답변은 나중에 작성할 수 있습니다.');
    const content={answer:answer.value,keywords:keywords.value.split(',').map(x=>x.trim()).filter(Boolean),followUps,importance:importance.value,retry:retry.checked,notes:notes.value};
    mutate(s=>{
     const id=q?.id||S.uid();
@@ -161,13 +161,13 @@
  $('open-companies').onclick=()=>open('companies');$('open-library').onclick=()=>open('library');$('open-debriefs').onclick=()=>open('debriefs');
  $('edit-current-company').onclick=()=>{open('companies');companyForm($('manager-content'),company());};
  $('close-manager').onclick=()=>{hideManager();returnFocus?.focus();};
- for(const id of ['all-mode','retry-mode'])$(id).addEventListener('click',hideManager);
+
  $('confirm-delete-company').onclick=e=>{e.preventDefault();if(!deletingId)return;const id=deletingId;
   if(mutate(s=>{s.companies=s.companies.filter(c=>c.id!==id);s.library=s.library.filter(q=>q.companyId!==id);},renderPanel)){$('delete-dialog').close();deletingId=null;}
  };
  $('migrate-records').onclick=()=>{try{S.migrate();P.refresh();updateChrome();status(S.message);}catch(e){error(e);}};
  $('postpone-migration').onclick=()=>{S.postpone();P.refresh();updateChrome();status(S.message);};
- $('export-data').onclick=()=>{try{const blob=new Blob([S.exportRaw()],{type:'application/json'});const url=URL.createObjectURL(blob);const a=el('a');a.href=url;a.download='cx-interview-lab-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status('백업 파일을 내려받았습니다. 개인정보가 포함될 수 있으니 안전하게 보관하세요.');}catch(e){error(e);}};
+ $('export-data').onclick=()=>{try{const backup=JSON.parse(S.exportRaw());backup.practiceDraft=P.snapshot();const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=el('a');a.href=url;a.download='cx-interview-lab-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status('백업 파일을 내려받았습니다. 개인정보가 포함될 수 있으니 안전하게 보관하세요.');}catch(e){error(e);}};
  window.addEventListener('cx-progress',updateChrome);
  updateChrome();if(S.fatal)status(S.fatal,true);
 })();

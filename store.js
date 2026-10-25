@@ -19,6 +19,15 @@
   });
   return {version:2,companies:[company],library,commonRecords:{},migration:{legacyImported:false}};
  }
+ // 생성형 꼬리질문 확장 시에도 작성 출처를 구분할 수 있도록 선택 메타데이터를 지원합니다.
+ function upgrade(s){
+  const historyFor=r=>{if(!Array.isArray(r.history))r.history=r.completed?[{id:uid(),date:null,text:r.text||'',seconds:r.seconds||0,rating:r.rating||'',source:'legacy'}]:[];for(const f of r.followUps||[])if(!Array.isArray(f.history))f.history=f.completed?[{id:uid(),date:null,text:f.text||'',seconds:f.seconds||0,rating:'',source:'legacy'}]:[];};
+  for(const map of [s.commonRecords,...s.companies.map(c=>c.records)])for(const r of Object.values(map))historyFor(r);
+  if(!s.features?.learningShell){
+   if(!s.companies.some(c=>c.name.trim()==='쿠어')){let id='kuer';if(s.companies.some(c=>c.id===id))id=uid();const links={};for(const q of s.library.filter(q=>q.scope==='common'))links[q.id]={importance:'보통',retry:false};s.companies.push({id,name:'쿠어',role:'지원 직무 미등록',posting:'',status:'지원 예정',schedule:'',memo:'지원 직무와 회사별 참고 답변을 직접 등록해 주세요.',archived:false,links,records:{},debriefs:[]});}
+   s.features={...s.features,learningShell:true};
+  }
+ }
  let state, fatal='', pendingLegacy=null, message='', baseline=null;
  function validate(s){
   if(!s||s.version!==2||!Array.isArray(s.companies)||!Array.isArray(s.library)||!s.commonRecords||typeof s.commonRecords!=='object'||Array.isArray(s.commonRecords))throw Error('데이터 형식을 확인할 수 없습니다.');
@@ -29,6 +38,7 @@
    if(!map||typeof map!=='object'||Array.isArray(map))throw Error('연습 기록 형식이 올바르지 않습니다.');
    for(const r of Object.values(map)){
     if(!r||typeof r!=='object'||Array.isArray(r)||(r.text!==undefined&&typeof r.text!=='string')||(r.completed!==undefined&&typeof r.completed!=='boolean')||(r.rating!==undefined&&!['','good','okay','retry'].includes(r.rating))||(r.seconds!==undefined&&(!Number.isFinite(r.seconds)||r.seconds<0))||(r.followUps!==undefined&&(!Array.isArray(r.followUps)||!r.followUps.every(f=>f&&typeof f==='object'&&(f.text===undefined||typeof f.text==='string')&&(f.completed===undefined||typeof f.completed==='boolean')&&(f.seconds===undefined||(Number.isFinite(f.seconds)&&f.seconds>=0))))))throw Error('연습 기록이 손상되었습니다.');
+    for(const entry of [r,...r.followUps||[]])if(entry.history!==undefined&&(!Array.isArray(entry.history)||entry.history.some(h=>!h||typeof h.id!=='string'||(h.date!==null&&typeof h.date!=='string')||typeof h.text!=='string'||!Number.isFinite(h.seconds)||h.seconds<0)))throw Error('답변 이력이 손상되었습니다.');
    }
   };
   recordMap(s.commonRecords);
@@ -40,7 +50,7 @@
   for(const c of s.companies)for(const [id,link] of Object.entries(c.links)){const q=s.library.find(q=>q.id===id);if(!q||!link||typeof link!=='object'||Array.isArray(link)||(link.keywords!==undefined&&(!Array.isArray(link.keywords)||!link.keywords.every(k=>typeof k==='string')))||(link.notes!==undefined&&typeof link.notes!=='string')||(link.importance!==undefined&&!['낮음','보통','높음'].includes(link.importance))||(link.retry!==undefined&&typeof link.retry!=='boolean')||(q.scope==='company'&&q.companyId!==c.id)||!link||typeof link!=='object'||(link.answer!==undefined&&typeof link.answer!=='string')||(link.followUps!==undefined&&(!Array.isArray(link.followUps)||!link.followUps.every(f=>f&&typeof f.question==='string'&&typeof f.answer==='string'))))throw Error('질문 연결 정보가 올바르지 않습니다.');}
  }
  try{
-  const saved=localStorage.getItem(KEY);baseline=saved;state=saved?JSON.parse(saved):initial();validate(state);
+  const saved=localStorage.getItem(KEY);baseline=saved;state=saved?JSON.parse(saved):initial();validate(state);upgrade(state);validate(state);
   if(!state.migration?.legacyImported && state.companies.some(c=>c.id==='lawcompany')){const old=localStorage.getItem(LEGACY);if(old){const r=JSON.parse(old);if(!r||typeof r!=='object'||Array.isArray(r))throw Error('이전 연습 기록이 손상되었습니다.');if(Object.keys(r).length)pendingLegacy=r;}}
  }catch(e){state=initial();fatal='저장된 기록을 불러오지 못했습니다. 기존 데이터를 보호하기 위해 저장을 중지했습니다. 먼저 데이터 백업을 내려받아 확인해 주세요. '+e.message;}
  function write(next){
@@ -54,7 +64,7 @@
  function transaction(edit){const next=clone(state);edit(next);try{write(next);return true;}catch(e){throw Error('저장하지 못했습니다. '+e.message);}}
  function migrate(){
   if(!pendingLegacy)return;
-  const next=clone(state);const target=next.companies.find(c=>c.id==='lawcompany');const meaningful=Object.fromEntries(Object.entries(target.records).filter(([,r])=>r.text?.trim()||r.completed||r.rating||r.seconds>0||r.followUps?.some(f=>f.text?.trim()||f.completed)));target.records={...clone(pendingLegacy),...meaningful};next.migration={legacyImported:true};
+  const next=clone(state);const target=next.companies.find(c=>c.id==='lawcompany');const meaningful=Object.fromEntries(Object.entries(target.records).filter(([,r])=>r.text?.trim()||r.completed||r.rating||r.seconds>0||r.followUps?.some(f=>f.text?.trim()||f.completed)));target.records={...clone(pendingLegacy),...meaningful};next.migration={legacyImported:true};upgrade(next);
   const old=pendingLegacy;pendingLegacy=null;
   try{write(next);message='기존 기록을 로앤컴퍼니로 이전했습니다. 이전 원본(v1)은 삭제하지 않았습니다.';}catch(e){pendingLegacy=old;throw e;}
  }
@@ -66,6 +76,15 @@
    if(!companyId)return state.library.filter(q=>q.scope==='common').map(clone);
    const c=state.companies.find(c=>c.id===companyId);if(!c)return [];
    return state.library.filter(q=>Object.hasOwn(c.links,q.id)&&(mode==='mixed'||q.scope===mode)).map(q=>({...clone(q),...clone(c.links[q.id]),id:q.id,category:q.category,question:q.question,scope:q.scope,companyId:q.companyId}));
+  },
+  clearAll(){
+   if(localStorage.getItem(KEY)!==baseline)throw Error('다른 탭의 변경이 있습니다. 백업 후 새로고침해 주세요.');
+   const keys=[KEY,LEGACY,'cx-interview-lab:theme'];const before=keys.map(k=>localStorage.getItem(k));
+   try{keys.forEach(k=>localStorage.removeItem(k));if(keys.some(k=>localStorage.getItem(k)!==null))throw Error('삭제 결과를 확인할 수 없습니다.');}
+   catch(e){for(let i=0;i<keys.length;i++)try{if(before[i]!==null)localStorage.setItem(keys[i],before[i]);}catch{}throw Error('전체 삭제를 완료하지 못했습니다. 백업을 보관하고 저장 설정을 확인하세요.');}
+   state={version:2,companies:[],library:[],commonRecords:{},migration:{legacyImported:true},features:{learningShell:true}};baseline=null;fatal='';pendingLegacy=null;
+   // 빈 상태를 저장해 초기 예시 기업이 다음 접속 때 다시 생성되지 않게 합니다.
+   try{write(state);}catch(e){throw Error('기록은 삭제됐지만 빈 상태 저장에 실패했습니다. 다음 접속 시 초기 질문이 다시 표시될 수 있습니다.');}
   },
   exportRaw(){return JSON.stringify({exportedAt:new Date().toISOString(),inMemory:state,current:localStorage.getItem(KEY),legacy:localStorage.getItem(LEGACY)},null,2);}
  };
