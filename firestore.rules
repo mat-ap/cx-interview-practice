@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function member(space) {
+      return signedIn() && exists(/databases/$(database)/documents/cxWorkspaces/$(space)/members/$(request.auth.uid));
+    }
+    function invitation(token) { return get(/databases/$(database)/documents/cxInvites/$(token)).data; }
+    function validInvite(token) { return invitation(token).expiresAt > request.time; }
+    match /cxWorkspaces/{space} {
+      allow get: if member(space);
+      allow list, delete: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['owner','revision','payload','updatedAt'])
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.revision is int && request.resource.data.revision == 0
+        && request.resource.data.payload is string && request.resource.data.payload.size() < 900000
+        && request.resource.data.updatedAt == request.time;
+      allow update: if member(space)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revision','payload','updatedAt'])
+        && request.resource.data.revision is int && request.resource.data.revision == resource.data.revision + 1
+        && request.resource.data.payload is string && request.resource.data.payload.size() < 900000
+        && request.resource.data.updatedAt == request.time;
+      match /members/{device} {
+        allow get: if signedIn() && (request.auth.uid == device || member(space));
+        allow list: if member(space);
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['uid','role','approvedAt'])
+          && request.resource.data.uid == device
+          && request.resource.data.approvedAt == request.time
+          && ((device == request.auth.uid && request.resource.data.role == 'owner'
+               && getAfter(/databases/$(database)/documents/cxWorkspaces/$(space)).data.owner == request.auth.uid)
+              || (member(space) && request.resource.data.role == 'member'));
+        allow update: if false;
+        allow delete: if member(space) && resource.data.role != 'owner';
+      }
+    }
+    match /cxInvites/{token} {
+      allow get: if signedIn() && validInvite(token);
+      allow list, update: if false;
+      allow create: if signedIn() && token.matches('^[a-f0-9]{48}$')
+        && request.resource.data.keys().hasOnly(['workspaceId','createdBy','createdAt','expiresAt'])
+        && request.resource.data.workspaceId is string
+        && member(request.resource.data.workspaceId)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt <= request.time + duration.value(10, 'm');
+      allow delete: if member(resource.data.workspaceId);
+      match /requests/{device} {
+        allow get: if signedIn() && (request.auth.uid == device || member(invitation(token).workspaceId));
+        allow list: if member(invitation(token).workspaceId);
+        allow create: if signedIn() && request.auth.uid == device && validInvite(token)
+          && request.resource.data.keys().hasOnly(['uid','status','createdAt'])
+          && request.resource.data.uid == device && request.resource.data.status == 'pending'
+          && request.resource.data.createdAt == request.time;
+        allow update: if member(invitation(token).workspaceId) && validInvite(token)
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','approvedAt'])
+          && request.resource.data.status == 'approved' && request.resource.data.approvedAt == request.time;
+        allow delete: if false;
+      }
+    }
+  }
+}

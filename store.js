@@ -53,13 +53,14 @@
   const saved=localStorage.getItem(KEY);baseline=saved;state=saved?JSON.parse(saved):initial();validate(state);upgrade(state);validate(state);
   if(!state.migration?.legacyImported && state.companies.some(c=>c.id==='lawcompany')){const old=localStorage.getItem(LEGACY);if(old){const r=JSON.parse(old);if(!r||typeof r!=='object'||Array.isArray(r))throw Error('이전 연습 기록이 손상되었습니다.');if(Object.keys(r).length)pendingLegacy=r;}}
  }catch(e){state=initial();fatal='저장된 기록을 불러오지 못했습니다. 기존 데이터를 보호하기 위해 저장을 중지했습니다. 먼저 데이터 백업을 내려받아 확인해 주세요. '+e.message;}
- function write(next){
+ function write(next,reason='local'){
   if(fatal)throw Error(fatal);
   if(pendingLegacy)throw Error('먼저 기존 기록 이전 안내에서 이전 또는 나중에를 선택해 주세요.');
   if(localStorage.getItem(KEY)!==baseline)throw Error('다른 탭에서 데이터가 변경됐습니다. 답변을 복사한 후 새로고침해 주세요.');
   validate(next);localStorage.setItem(KEY,JSON.stringify(next));
   if(localStorage.getItem(KEY)!==JSON.stringify(next))throw Error('저장 결과를 확인하지 못했습니다.');
-  baseline=JSON.stringify(next);state=next;
+  const changed=baseline!==JSON.stringify(next);baseline=JSON.stringify(next);state=next;
+  if(changed)window.dispatchEvent(new CustomEvent('cx-data-change',{detail:{reason}}));
  }
  function transaction(edit){const next=clone(state);edit(next);try{write(next);return true;}catch(e){throw Error('저장하지 못했습니다. '+e.message);}}
  function migrate(){
@@ -77,7 +78,10 @@
    const c=state.companies.find(c=>c.id===companyId);if(!c)return [];
    return state.library.filter(q=>Object.hasOwn(c.links,q.id)&&(mode==='mixed'||q.scope===mode)).map(q=>({...clone(q),...clone(c.links[q.id]),id:q.id,category:q.category,question:q.question,scope:q.scope,companyId:q.companyId}));
   },
+  replaceRemote(next){const validated=clone(next);validate(validated);write(validated,'remote');},
+  validateRemote(next){validate(next);return true;},
   clearAll(){
+   if(window.CXSync?.isLinked)throw Error('먼저 설정에서 이 기기의 동기화를 중지해 주세요. 전체 삭제는 이 기기의 로컬 자료만 지우며 클라우드 자료는 자동 삭제하지 않습니다.');
    if(localStorage.getItem(KEY)!==baseline)throw Error('다른 탭의 변경이 있습니다. 백업 후 새로고침해 주세요.');
    const keys=[KEY,LEGACY,'cx-interview-lab:theme'];const before=keys.map(k=>localStorage.getItem(k));
    try{keys.forEach(k=>localStorage.removeItem(k));if(keys.some(k=>localStorage.getItem(k)!==null))throw Error('삭제 결과를 확인할 수 없습니다.');}
