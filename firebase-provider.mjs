@@ -91,8 +91,9 @@ export async function createFirebaseProvider(config) {
       }, error);
     },
     async approve(id, token, member) {
+      const existingMember = await getDocFromServer(memberRef(id, member));
       const batch = writeBatch(db);
-      batch.set(memberRef(id, member), { uid: member, role: 'member', approvedAt: serverTimestamp() });
+      if (!existingMember.exists()) batch.set(memberRef(id, member), { uid: member, role: 'member', approvedAt: serverTimestamp() });
       batch.update(doc(db, 'cxInvites', token, 'requests', member), { status: 'approved', approvedAt: serverTimestamp() });
       await batch.commit();
     }
