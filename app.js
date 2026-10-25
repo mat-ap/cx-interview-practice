@@ -3,7 +3,7 @@
   const CATEGORIES = ['자기소개', '지원동기', '직무 이해', '성공/실패', '컬처핏', '협업', '실무 상황', 'AX 자동화'];
   const KEY = 'cx-interview-lab:v1';
   const $ = id => document.getElementById(id);
-  const valid = q => q && typeof q.id === 'string' && q.id && CATEGORIES.includes(q.category) && typeof q.question === 'string' && typeof q.answer === 'string' && Array.isArray(q.keywords) && q.keywords.every(k => typeof k === 'string') && Array.isArray(q.followUps) && q.followUps.length >= 1 && q.followUps.length <= 3 && q.followUps.every(f => f && typeof f.question === 'string' && typeof f.answer === 'string');
+  const valid = q => q && typeof q.id === 'string' && q.id && CATEGORIES.includes(q.category) && typeof q.question === 'string' && typeof q.answer === 'string' && Array.isArray(q.keywords) && q.keywords.every(k => typeof k === 'string') && Array.isArray(q.followUps) && q.followUps.length <= 3 && q.followUps.every(f => f && typeof f.question === 'string' && typeof f.answer === 'string');
   const seenIds = new Set();
   const raw = Array.isArray(window.CX_QUESTIONS) ? window.CX_QUESTIONS : [];
   const questions = raw.filter(q => { if (!valid(q) || seenIds.has(q.id)) return false; seenIds.add(q.id); return true; });
@@ -71,8 +71,11 @@
     $('model-answer').textContent = followIndex < 0 ? current.answer : current.followUps[followIndex].answer;
     $('keywords').replaceChildren(...current.keywords.map(k => { const s = document.createElement('span'); s.textContent = k; return s; }));
     $('evaluation').hidden = followIndex >= 0;
+    $('preparation-notes').hidden = followIndex >= 0 || !current.notes;
+    $('preparation-notes').textContent = typeof current.notes === 'string' ? '준비 메모: ' + current.notes : '';
     const remaining = current.followUps.length - (followIndex + 1);
-    $('followup-progress').textContent = followIndex < 0 ? `꼬리질문 ${current.followUps.length}개 준비됨` : `꼬리질문 ${followIndex + 1} / ${current.followUps.length}`;
+    $('followup-button').hidden = current.followUps.length === 0;
+    $('followup-progress').textContent = current.followUps.length === 0 ? '원문에 등록된 꼬리질문이 없습니다.' : followIndex < 0 ? `꼬리질문 ${current.followUps.length}개 준비됨` : `꼬리질문 ${followIndex + 1} / ${current.followUps.length}`;
     $('followup-button').textContent = followIndex < 0 ? '꼬리질문 시작 →' : remaining ? '다음 꼬리질문 →' : '기본 질문으로 돌아가기';
   }
   function displayActive() {

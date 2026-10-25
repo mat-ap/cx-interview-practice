@@ -15,8 +15,8 @@ const root = path.resolve(__dirname, '..');
  const page = await browser.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));
  const url = `http://127.0.0.1:${server.address().port}`;
  await page.goto(url);
- assert.equal(await page.locator('#total-count').textContent(), '5'); assert.equal(await page.locator('.question-item').count(), 5); check('대시보드 및 질문 5개');
- await page.locator('#next-button').click(); assert.equal(await page.locator('#review').isVisible(), false);
+ assert.equal(await page.locator('#total-count').textContent(), '26'); assert.equal(await page.locator('.question-item').count(), 26); check('대시보드 및 질문 26개');
+ await page.locator('#next-button').click(); await page.locator('.question-item').first().click(); assert.equal(await page.locator('#review').isVisible(), false);
  await page.locator('#complete-button').click(); assert.match(await page.locator('#notice').textContent(), /답변을 입력/); check('답변 전 공개 방지 및 빈 답변 차단');
  await page.locator('#answer-input').fill('고객 이슈를 분류하고 관련 부서와 개선했습니다.');
  await page.locator('#timer-toggle').click(); await page.waitForTimeout(1150); await page.locator('#timer-toggle').click(); assert.notEqual(await page.locator('#timer').textContent(), '00:00'); check('타이머 시작 및 정지');
@@ -29,14 +29,37 @@ const root = path.resolve(__dirname, '..');
  await page.reload(); assert.equal(await page.locator('#retry-count').textContent(), '1'); await page.locator('#retry-mode').click(); assert.equal(await page.locator('.question-item').count(), 1); await page.locator('.question-item').click(); assert.equal(await page.locator('#answer-input').inputValue(), '고객 이슈를 분류하고 관련 부서와 개선했습니다.');
  await page.locator('#followup-button').click(); assert.equal(await page.locator('#answer-input').inputValue(), '꼬리질문 답변입니다.'); check('새로고침 후 기록 복원 및 재연습 필터');
  await page.locator('#all-mode').click(); await page.locator('#search').fill('개인정보'); assert.ok(await page.locator('.question-item').count() >= 1); await page.locator('#search').fill('없는검색어123'); assert.equal(await page.locator('.question-item').count(), 0); assert.equal(await page.locator('#next-button').isDisabled(), true); await page.locator('#search').fill('');
- await page.getByRole('button', {name: '컬처핏 0', exact: true}).click(); assert.equal(await page.locator('.question-item').count(), 0); await page.getByRole('button', {name: '전체 카테고리 5', exact: true}).click(); check('검색 및 빈 카테고리');
- await page.reload(); const visited = new Set(); for (let i = 0; i < 5; i++) { await page.locator('#next-button').click(); const q = await page.locator('#question-text').textContent(); assert.ok(!visited.has(q)); visited.add(q); } assert.match(await page.locator('#next-button').textContent(), /새 세션/); await page.locator('#next-button').click(); check('세션 내 중복 방지와 새 세션');
+ await page.getByRole('button', {name: '자기소개 1', exact: true}).click(); assert.equal(await page.locator('.question-item').count(), 1); await page.getByRole('button', {name: '전체 카테고리 26', exact: true}).click(); check('검색 및 카테고리 필터');
+ await page.reload(); const visited = new Set(); for (let i = 0; i < 26; i++) { await page.locator('#next-button').click(); const q = await page.locator('#question-text').textContent(); assert.ok(!visited.has(q)); visited.add(q); } assert.match(await page.locator('#next-button').textContent(), /새 세션/); await page.locator('#next-button').click(); check('세션 내 중복 방지와 새 세션');
  await page.setViewportSize({width: 390,height:844}); assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)); await page.screenshot({path:'/tmp/cx-mobile.png',fullPage:true}); await page.setViewportSize({width:1440,height:1080}); await page.evaluate(() => scrollTo(0, 0)); await page.screenshot({path:'/tmp/cx-desktop.png',fullPage:true}); check('모바일 가로 넘침 없음');
  const blocked = await browser.newPage(); await blocked.addInitScript(() => { Object.defineProperty(Storage.prototype,'setItem',{value:()=>{throw new Error('denied')}}); Object.defineProperty(window,'SpeechRecognition',{value:undefined}); Object.defineProperty(window,'webkitSpeechRecognition',{value:undefined}); }); await blocked.goto(url); await blocked.locator('#next-button').click(); await blocked.locator('#answer-input').fill('저장 실패 테스트'); assert.match(await blocked.locator('#notice').textContent(), /저장하지 못/); assert.equal(await blocked.locator('#mic-button').isDisabled(), true); check('저장 실패 및 음성 미지원 대체 안내');
  const corrupt = await browser.newPage(); await corrupt.addInitScript(() => localStorage.setItem('cx-interview-lab:v1','{broken')); await corrupt.goto(url); assert.match(await corrupt.locator('#notice').textContent(), /불러오지 못/); check('손상된 저장 기록 예외 처리');
  const empty = await browser.newPage(); await empty.route('**/questions.js', route => route.fulfill({contentType:'text/javascript',body:'window.CX_QUESTIONS = [];'})); await empty.goto(url); assert.match(await empty.locator('#question-text').textContent(), /등록된 질문이 없/); assert.equal(await empty.locator('#next-button').isDisabled(), true); check('질문 데이터 없음');
  const unsafe = await browser.newPage(); await unsafe.route('**/questions.js', route => route.fulfill({contentType:'text/javascript',body:`window.CX_QUESTIONS=[{id:'x',category:'협업',question:'<img src=x onerror=alert(1)>',answer:'<script>alert(1)</script>',followUps:[{question:'질문',answer:'답변'}],keywords:['<b>키워드</b>']}];`})); await unsafe.goto(url); await unsafe.locator('#next-button').click(); assert.equal(await unsafe.locator('#question-text img').count(),0); await unsafe.locator('#answer-input').fill('답변'); await unsafe.locator('#complete-button').click(); assert.equal(await unsafe.locator('#model-answer script').count(),0); assert.equal(await unsafe.locator('#keywords b').count(),0); check('질문·답변·키워드 안전한 텍스트 렌더링');
  const voice = await browser.newPage(); await voice.addInitScript(() => { window.SpeechRecognition = class { start(){ this.onerror({error:'not-allowed'}); this.onend(); } abort(){} }; }); await voice.goto(url); await voice.locator('#next-button').click(); await voice.locator('#mic-button').click(); assert.match(await voice.locator('#speech-status').textContent(), /권한이 거부/); check('마이크 권한 거부 안내');
+ const audit = await browser.newPage(); await audit.goto(url);
+ const data = await audit.evaluate(() => window.CX_QUESTIONS);
+ assert.equal(data.length, 26); assert.equal(new Set(data.map(q => q.id)).size, 26);
+ assert.deepEqual(data.map(q => q.followUps.length), [1,2,1,2,2,1,3,2,3,3,3,3,1,3,1,2,1,2,2,1,1,0,1,1,0,0]);
+ for (const [index, q] of data.entries()) {
+  assert.equal(q.id, 'lawcompany-q' + String(index + 1).padStart(2, '0')); assert.ok(q.keywords.length >= 3 && q.keywords.length <= 5);
+  await audit.locator('.question-item').nth(index).click(); assert.equal(await audit.locator('#question-text').textContent(), q.question);
+  await audit.locator('#answer-input').fill('원문 전체 검증 답변'); await audit.locator('#complete-button').click(); assert.equal(await audit.locator('#model-answer').textContent(), q.answer);
+  assert.deepEqual(await audit.locator('#keywords span').allTextContents(), q.keywords);
+  if(q.notes) assert.equal(await audit.locator('#preparation-notes').textContent(), '준비 메모: ' + q.notes);
+  if(!q.followUps.length) assert.equal(await audit.locator('#followup-button').isVisible(), false);
+  for(const f of q.followUps) {
+   await audit.locator('#followup-button').click(); assert.equal(await audit.locator('#question-text').textContent(), f.question); assert.equal(await audit.locator('#review').isVisible(), false);
+   await audit.locator('#answer-input').fill('꼬리질문 원문 검증 답변'); await audit.locator('#complete-button').click(); assert.equal(await audit.locator('#model-answer').textContent(), f.answer);
+  }
+  if(q.followUps.length) { await audit.locator('#followup-button').click(); assert.equal(await audit.locator('#question-text').textContent(), q.question); }
+ }
+ check('26개 본 질문·모범답변·전체 꼬리질문과 답변·키워드·준비 메모 표시');
+ assert.match(data[9].answer, /B2B 플랫폼에서 기업 고객 온보딩/); assert.match(data[9].followUps[1].answer, /정확한 전환율을 별도로 비교하지는 않았습니다/);
+ assert.match(data[11].answer, /일정 기간 동안 몇 건이 발생했는지 데이터를 정리/); assert.match(data[11].followUps[0].answer, /정확한 감소율까지 별도로 산출하지는 않았지만/);
+ assert.match(data[6].answer, /차분하고 침착한 성격/); assert.match(data[6].answer, /실수를 했을 때 그 일을 조금 오래 생각/);
+ assert.match(data[10].followUps[1].answer, /정확한 비용 절감액을 별도로 산출하지는 않았습니다/);
+ assert.match(data[17].followUps[0].answer, /대규모 AX 프로젝트를 주도한 경험은 없습니다/); check('온보딩 실패·VOC 집계·정량 성과 미산출·성격 및 경력 사실 유지');
  assert.deepEqual(errors, []); check('브라우저 실행 오류 없음'); console.log(`완료: ${count}개 검증 통과`);
  } finally { if(browser) await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(e=>{ console.error(e); process.exitCode=1; });
