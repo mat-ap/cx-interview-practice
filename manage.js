@@ -2,6 +2,7 @@
  'use strict';
  const S=window.CXStore, P=window.CXPractice, $=id=>document.getElementById(id);
  let panel='', libraryMode='company', deletingId=null, returnFocus=null;
+ let catalogContext='', catalogSearch='', catalogCategory='';
  const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
  const button=(text,action,cls='outline-button')=>{const b=el('button',text,cls);b.type='button';b.onclick=action;return b;};
  function status(text,error=false){$('management-status').textContent=text;$('management-status').classList.toggle('save-warning',error);}
@@ -20,8 +21,8 @@
  }
  function formSubmit(form,text,fn){const b=el('button',text,'primary-button');b.type='submit';form.append(b);form.onsubmit=e=>{e.preventDefault();if(!form.reportValidity())return;try{fn();}catch(err){error(err);}};}
  function hideManager(){P.showHome();}
- function open(which){if(!P.pause()){status('현재 답변을 저장하지 못했습니다. 답변을 먼저 복사해 주세요.',true);return;}P.openManagement();returnFocus=document.activeElement;panel=which;$('manager').hidden=false;$('manager-title').textContent={companies:'기업 관리',library:'질문 관리',debriefs:'면접 복기'}[which];renderPanel();$('manager').focus();$('manager').scrollIntoView({block:'start',behavior:'instant'});}
- function renderPanel(){const root=$('manager-content');root.replaceChildren();if(panel==='companies')renderCompanies(root);else if(panel==='library')renderLibrary(root);else if(panel==='debriefs')renderDebriefs(root);}
+ function open(which){if(!P.pause()){status('현재 답변을 저장하지 못했습니다. 답변을 먼저 복사해 주세요.',true);return;}P.openManagement();returnFocus=document.activeElement;panel=which;$('manager').hidden=false;$('manager-title').textContent={companies:'기업 관리',library:'질문 관리',debriefs:'면접 복기',catalog:'전체 질문 리스트'}[which];renderPanel();$('manager').focus();$('manager').scrollIntoView({block:'start',behavior:'instant'});}
+ function renderPanel(){const root=$('manager-content');root.replaceChildren();if(panel==='companies')renderCompanies(root);else if(panel==='library')renderLibrary(root);else if(panel==='debriefs')renderDebriefs(root);else if(panel==='catalog')renderCatalog(root);}
  function updateChrome(){
   const select=$('company-select');select.replaceChildren();const all=el('option','전체 공통 질문 연습');all.value='';select.append(all);
   for(const c of S.state.companies.filter(c=>!c.archived)){const o=el('option',c.name+' · '+c.role);o.value=c.id;select.append(o);}select.value=P.companyId;
@@ -63,6 +64,78 @@
    const details={name:name.value.trim(),role:role.value.trim(),posting:posting.value,status:application.value,schedule:schedule.value,memo:memo.value};
    if(c)Object.assign(s.companies.find(x=>x.id===c.id),details);else s.companies.push({id:S.uid(),...details,archived:false,links:{},records:{},debriefs:[]});
   },renderPanel);});form.append(button('취소',renderPanel));name.focus();
+ }
+ function catalogEntries(){
+  const entries=[];
+  if(catalogContext==='all'||catalogContext==='common')for(const q of S.questions(''))entries.push({q,context:'common',companyId:'',label:'공통 라이브러리'});
+  for(const c of S.state.companies)if(catalogContext==='all'||catalogContext==='company:'+c.id)for(const q of S.questions(c.id))entries.push({q,context:'company:'+c.id,companyId:c.id,label:c.name+(c.archived?' · 보관됨':'')});
+  return entries;
+ }
+ function renderCatalog(root,reveal){
+  const intro=el('p','질문을 누르면 참고 답변과 꼬리질문을 펼쳐 볼 수 있어요. 기업별로 다른 답변은 각각 구분해 표시합니다.','help');root.append(intro);
+  const filters=el('div',undefined,'catalog-filters');
+  const options=[{value:'all',label:'모든 기업 + 공통 라이브러리'},{value:'common',label:'공통 라이브러리'}];
+  for(const c of S.state.companies)options.push({value:'company:'+c.id,label:c.name+(c.archived?' (보관됨)':'')});
+  if(!options.some(o=>o.value===catalogContext))catalogContext='all';
+  const context=field(filters,'볼 질문','catalog-context','select',catalogContext,options);
+  const category=field(filters,'카테고리','catalog-category','select',catalogCategory,[{value:'',label:'전체 카테고리'},...S.categories.map(c=>({value:c,label:c}))]);
+  const search=field(filters,'질문·답변 검색','catalog-search','search',catalogSearch);root.append(filters);
+  const toolbar=el('div',undefined,'panel-heading');const count=el('p','','help');count.id='catalog-count';toolbar.append(count,button('새 질문 추가',()=>catalogAddForm(root)));root.append(toolbar);
+  const list=el('div');list.id='catalog-list';root.append(list);
+  function draw(){
+   list.replaceChildren();const term=catalogSearch.trim().toLocaleLowerCase();
+   const entries=catalogEntries().filter(({q})=>(!catalogCategory||q.category===catalogCategory)&&(!term||[q.question,q.answer,...q.keywords,...q.followUps.flatMap(f=>[f.question,f.answer])].join(' ').toLocaleLowerCase().includes(term)));
+   count.textContent=entries.length+'개 질문 · 클릭해서 답변 펼치기';
+   if(!entries.length)list.append(el('p','표시할 질문이 없어요. 검색 조건을 바꾸거나 새 질문을 추가해 주세요.','help'));
+   entries.forEach((entry,index)=>{
+    const {q}=entry;const item=el('details',undefined,'catalog-item');item.dataset.catalogId=q.id;item.dataset.context=entry.context;
+    const summary=el('summary');summary.append(el('span',entry.label+' · '+q.category+' · '+(q.scope==='common'?'공통 문항':'회사 전용'),'catalog-meta'),el('strong',q.question));item.append(summary);
+    const body=el('div',undefined,'catalog-body');body.append(el('h3','참고 답변'),el('p',q.answer||'아직 참고 답변이 없어요. 질문·답변 수정에서 작성해 주세요.','prose'));
+    if(q.keywords.length){const keywords=el('div',undefined,'keywords');for(const k of q.keywords)keywords.append(el('span',k));body.append(keywords);}
+    if(q.notes)body.append(el('p',q.notes,'help prose'));
+    if(q.followUps.length){body.append(el('h3','꼬리질문과 참고 답변'));q.followUps.forEach((f,i)=>{body.append(el('h4',(i+1)+'. '+f.question),el('p',f.answer||'참고 답변 미등록','prose'));});}
+    body.append(button('질문·답변 수정',()=>catalogEditForm(body,entry,index,()=>renderCatalogAgain(root,{id:q.id,context:entry.context}))));item.append(body);list.append(item);
+    if(reveal?.id===q.id&&reveal.context===entry.context){item.open=true;summary.tabIndex=-1;summary.focus({preventScroll:true});item.scrollIntoView({block:'nearest'});}
+   });
+  }
+  context.onchange=()=>{catalogContext=context.value;draw();};category.onchange=()=>{catalogCategory=category.value;draw();};search.oninput=()=>{catalogSearch=search.value;draw();};draw();
+ }
+ function renderCatalogAgain(root,reveal){root.replaceChildren();renderCatalog(root,reveal);}
+ function catalogEditForm(body,entry,index,after){
+  body.querySelector('form')?.remove();const {q}=entry, form=el('form');form.className='catalog-edit-form';
+  if(q.scope==='common')form.append(el('p','공통 문항의 질문을 바꾸면 연결된 모든 기업에 반영됩니다. 답변은 '+entry.label+'에만 저장합니다. 기존 연습 이력과 꼬리질문은 유지합니다.','help'));
+  const question=field(form,'질문','catalog-edit-question-'+index,'textarea',q.question);question.required=true;
+  const answer=field(form,'참고 답변','catalog-edit-answer-'+index,'textarea',q.answer);
+  const feedback=el('p','','notice');feedback.setAttribute('role','status');form.append(feedback);
+  formSubmit(form,'수정 저장',()=>{
+   if(!question.value.trim()){feedback.textContent='질문을 입력해 주세요.';return;}
+   if(!mutate(s=>{
+    const source=s.library.find(x=>x.id===q.id);if(!source)throw Error('질문이 삭제되었습니다. 목록을 다시 열어 주세요.');source.question=question.value.trim();
+    if(entry.companyId){const c=s.companies.find(c=>c.id===entry.companyId);if(!c?.links[q.id])throw Error('기업의 질문 연결을 찾을 수 없습니다.');c.links[q.id].answer=answer.value;}
+    else source.answer=answer.value;
+   },after))feedback.textContent='저장하지 못했습니다. 입력한 내용은 유지됩니다. 저장 공간과 안내 메시지를 확인해 주세요.';
+  });form.append(button('취소',()=>form.remove()));body.append(form);question.focus();
+ }
+ function catalogAddForm(root){
+  root.querySelector('#catalog-add-form')?.remove();const form=el('form');form.id='catalog-add-form';root.prepend(form);form.append(el('h3','새 질문 추가'));
+  const choices=[{value:'common',label:'공통 라이브러리'}];for(const c of S.state.companies)choices.push({value:'company:'+c.id,label:c.name+(c.archived?' (보관됨)':'')});
+  const selected=catalogContext.startsWith('company:')?catalogContext:'common';
+  const destination=field(form,'저장할 곳','catalog-add-destination','select',selected,choices);
+  const category=field(form,'카테고리','catalog-add-category','select',S.categories[0],S.categories);
+  const question=field(form,'질문','catalog-add-question','textarea');question.required=true;
+  const answer=field(form,'참고 답변','catalog-add-answer','textarea');
+  form.append(el('p','공통 라이브러리에 추가한 문항은 질문 라이브러리에서 원하는 기업에 연결할 수 있어요. 꼬리질문·키워드 등은 기존 질문 라이브러리에서 편집할 수 있습니다.','help'));
+  const feedback=el('p','','notice');feedback.setAttribute('role','status');form.append(feedback);
+  formSubmit(form,'새 질문 저장',()=>{
+   if(!question.value.trim()){feedback.textContent='질문을 입력해 주세요.';return;}
+   const id=S.uid(), companyId=destination.value.startsWith('company:')?destination.value.slice(8):'';
+   const content={answer:answer.value,followUps:[],keywords:[],notes:'',importance:'보통',retry:false};
+   if(!mutate(s=>{
+    if(companyId&&!s.companies.some(c=>c.id===companyId))throw Error('기업을 찾을 수 없습니다.');
+    s.library.push({id,...content,question:question.value.trim(),category:category.value,scope:companyId?'company':'common',companyId:companyId||null});
+    if(companyId)s.companies.find(c=>c.id===companyId).links[id]={...content};
+   },()=>{catalogContext=destination.value;catalogSearch='';catalogCategory='';renderCatalogAgain(root,{id,context:catalogContext});}))feedback.textContent='저장하지 못했습니다. 입력한 내용은 유지됩니다.';
+  });form.append(button('추가 취소',()=>form.remove()));question.focus();form.scrollIntoView({block:'start'});
  }
  function renderLibrary(root){
   const tabs=el('div',undefined,'manager-tabs');
@@ -158,6 +231,7 @@
  }
  $('company-select').onchange=e=>{if(!P.setContext(e.target.value,$('practice-scope').value)){updateChrome();return;}updateChrome();hideManager();};
  $('practice-scope').onchange=e=>{if(!P.setContext(P.companyId,e.target.value))return;updateChrome();hideManager();};
+ $('open-question-list').onclick=()=>{catalogContext=P.companyId?'company:'+P.companyId:'common';catalogSearch='';catalogCategory='';open('catalog');};
  $('open-companies').onclick=()=>open('companies');$('open-library').onclick=()=>open('library');$('open-debriefs').onclick=()=>open('debriefs');
  $('edit-current-company').onclick=()=>{open('companies');companyForm($('manager-content'),company());};
  $('close-manager').onclick=()=>{hideManager();returnFocus?.focus();};
