@@ -243,5 +243,5 @@
  $('postpone-migration').onclick=()=>{S.postpone();P.refresh();updateChrome();status(S.message);};
  $('export-data').onclick=()=>{try{const backup=JSON.parse(S.exportRaw());backup.practiceDraft=P.snapshot();const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=el('a');a.href=url;a.download='cx-interview-lab-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status('백업 파일을 내려받았습니다. 개인정보가 포함될 수 있으니 안전하게 보관하세요.');}catch(e){error(e);}};
  window.addEventListener('cx-progress',updateChrome);
- updateChrome();if(S.fatal)status(S.fatal,true);
+ updateChrome();if(S.fatal)status(S.fatal,true);else if(S.message)status(S.message);
 })();

@@ -23,6 +23,26 @@
  function upgrade(s){
   const historyFor=r=>{if(!Array.isArray(r.history))r.history=r.completed?[{id:uid(),date:null,text:r.text||'',seconds:r.seconds||0,rating:r.rating||'',source:'legacy'}]:[];for(const f of r.followUps||[])if(!Array.isArray(f.history))f.history=f.completed?[{id:uid(),date:null,text:f.text||'',seconds:f.seconds||0,rating:'',source:'legacy'}]:[];};
   for(const map of [s.commonRecords,...s.companies.map(c=>c.records)])for(const r of Object.values(map))historyFor(r);
+  // 2026-10-26 원문 추가분만 기존 브라우저에 합칩니다. 기존 편집/기록과 삭제 의사는 보존합니다.
+  if(!s.features?.lawcompanyContent20261026){
+   const target=s.companies.find(c=>c.id==='lawcompany')||s.companies.find(c=>c.name.replace(/\s/g,'')==='로앤컴퍼니');
+   let added=0;
+   if(target){
+    const normalize=text=>text.normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
+    const known=new Set();
+    for(const q of s.library)if(Object.hasOwn(target.links,q.id)){known.add(normalize(q.question));for(const f of target.links[q.id].followUps||q.followUps)known.add(normalize(f.question));}
+    for(const q of originals.filter(q=>q.sourceBatch==='lawcompany-20261026')){
+     const key=normalize(q.question);if(known.has(key)||s.library.some(x=>x.id===q.id))continue;
+     const common=s.library.find(x=>x.scope==='common'&&normalize(x.question)===key);
+     const id=common?.id||q.id;
+     if(!common)s.library.push({...clone(q),scope:'company',companyId:target.id,importance:'보통',retry:false});
+     target.links[id]={answer:q.answer,followUps:clone(q.followUps),keywords:clone(q.keywords),importance:'보통',retry:false};
+     known.add(key);added++;
+    }
+   }
+   s.features={...s.features,lawcompanyContent20261026:true};
+   if(added)message='로앤컴퍼니 새 질문 '+added+'개를 추가했습니다. 기존 답변과 연습 기록은 그대로 유지됩니다.';
+  }
   if(!s.features?.learningShell){
    if(!s.companies.some(c=>c.name.trim()==='쿠어')){let id='kuer';if(s.companies.some(c=>c.id===id))id=uid();const links={};for(const q of s.library.filter(q=>q.scope==='common'))links[q.id]={importance:'보통',retry:false};s.companies.push({id,name:'쿠어',role:'지원 직무 미등록',posting:'',status:'지원 예정',schedule:'',memo:'지원 직무와 회사별 참고 답변을 직접 등록해 주세요.',archived:false,links,records:{},debriefs:[]});}
    s.features={...s.features,learningShell:true};
