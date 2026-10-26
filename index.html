@@ -3,8 +3,28 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f7f2"><title>CX Interview Lab · 나만의 면접 루틴</title>
-  <link rel="stylesheet" href="./styles.css?v=catalog-20261026">
-  <script defer src="./firebase-config.js?v=sync-20261025"></script><script defer src="./questions.js"></script><script defer src="./store.js?v=sync-20261025"></script><script defer src="./app.js?v=learning-20261025"></script><script defer src="./manage.js?v=catalog-20261026"></script><script defer src="./sync.js?v=sync-20261025"></script>
+  <link id="app-styles" rel="stylesheet" href="./styles.css?v=refresh-20261026">
+  <script>
+    // 새로고침 버튼으로 방문하면 HTML뿐 아니라 CSS·JS도 새 주소로 요청합니다.
+    (() => {
+      const stamp = new URLSearchParams(location.search).get('_refresh');
+      const fresh = /^\d{10,17}$/.test(stamp || '') ? stamp : '';
+      const asset = path => {
+        const url = new URL(path, document.baseURI);
+        if (fresh) url.searchParams.set('_refresh', fresh);
+        return url.href;
+      };
+      if (fresh) document.getElementById('app-styles').href = asset('./styles.css');
+      document.addEventListener('DOMContentLoaded', () => {
+        for (const path of ['./firebase-config.js?v=sync-20261025', './questions.js', './store.js?v=sync-20261025', './app.js?v=learning-20261025', './manage.js?v=catalog-20261026', './sync.js?v=sync-20261025', './refresh.js?v=refresh-20261026']) {
+          const script = document.createElement('script');
+          script.async = false;
+          script.src = asset(path);
+          document.head.append(script);
+        }
+      }, { once: true });
+    })();
+  </script>
 </head>
 <body>
 <a class="skip-link" href="#main-content">본문으로 이동</a>
@@ -24,7 +44,7 @@
   <div class="sidebar-bottom"><span class="status-dot"></span>이 브라우저에 안전하게 저장<small>나만의 속도로, 한 질문씩.</small></div>
 </aside>
 <main id="main-content">
-  <header class="app-header"><span>나의 면접 루틴 <span class="header-dot">/</span> <strong id="header-context">학습 준비</strong></span><button id="sync-indicator" class="text-button" aria-label="동기화 설정 열기">기기 저장</button><button id="theme-toggle" class="icon-button" aria-label="다크 테마로 전환">☾</button></header>
+  <header class="app-header"><span>나의 면접 루틴 <span class="header-dot">/</span> <strong id="header-context">학습 준비</strong></span><button id="sync-indicator" class="text-button" aria-label="동기화 설정 열기">기기 저장</button><button id="theme-toggle" class="icon-button" aria-label="다크 테마로 전환">☾</button><button id="refresh-site" class="icon-button" aria-label="최신 내용으로 새로고침" title="답변을 저장하고 최신 내용으로 다시 접속"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7"/></svg></button></header>
   <p id="management-status" class="notice" role="status" aria-live="polite"></p>
   <section id="migration-panel" class="management-card" hidden><h2>이전 연습 기록을 이어갈까요?</h2><p>기존 기록을 로앤컴퍼니 전용 기록으로 복사합니다. 이미 새 기록이 있는 질문은 새 기록을 우선하며 v1 원본은 보존합니다.</p><div class="management-actions"><button id="migrate-records" class="primary-button">기존 기록을 로앤컴퍼니로 이전</button><button id="postpone-migration" class="outline-button">나중에 · 새 기록으로 시작</button></div></section>
   <section id="home-view">
